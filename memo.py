@@ -1,71 +1,82 @@
 # memo.py
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-# На вход принимаем "решение" как обычный dict (у тебя Decision наследуется от dict)
-# и формируем короткое инвест-мемо в человекочитаемом стиле.
+# Небольшие форматтеры, чтобы текст был аккуратным
+def _fmt(x: Optional[float]) -> str:
+    return f"{x:.2f}" if isinstance(x, (int, float)) else "—"
+
+def _fmt_range(lo: Optional[float], hi: Optional[float]) -> str:
+    if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+        return f"{lo:.2f}…{hi:.2f}"
+    return "—"
+
+def _ru_horizon(h: str) -> str:
+    h = (h or "").lower()
+    return {"short": "Трейд (1–5 дней)",
+            "mid": "Среднесрок (1–4 недели)",
+            "long": "Долгосрок (1–6 месяцев)"}.get(h, h or "—")
 
 def build_invest_memo(decision: Dict[str, Any]) -> str:
     """
-    decision: {
-      'ticker': 'QQQ',
-      'horizon': 'long'|'mid'|'short',
-      'stance': 'BUY'|'SELL'|'WAIT',
-      'entry': (float|None, float|None),
-      'target1': float|None,
-      'target2': float|None,
-      'stop': float|None,
-      'meta': {'price': float, ...}
-    }
-    """
-    tkr: str = decision.get("ticker", "").upper()
-    hz: str = decision.get("horizon", "")
-    stance: str = decision.get("stance", "WAIT")
-    price: Optional[float] = None
-    try:
-        price = float(decision.get("meta", {}).get("price"))  # может быть Decimal/строка
-    except Exception:
-        pass
+    Преобразует словарь decision в человекочитаемое инвест-мемо.
+    Никаких внутренних формул/пивотов не раскрываем.
 
-    ent = decision.get("entry")
-    if isinstance(ent, (list, tuple)) and len(ent) == 2:
-        entry_lo, entry_hi = ent
+    Ожидаемые ключи в decision:
+      - ticker: str
+      - horizon: 'short' | 'mid' | 'long'
+      - stance: 'BUY' | 'SELL' | 'WAIT'
+      - entry: tuple(low, high) или None
+      - target1, target2, stop: float | None
+      - meta: { 'price': float, ... } (опционально)
+    """
+    tkr: str = (decision.get("ticker") or "").upper()
+    hz: str = _ru_horizon(decision.get("horizon", ""))
+    stance: str = (decision.get("stance") or "WAIT").upper()
+
+    meta: Dict[str, Any] = decision.get("meta") or {}
+    price = meta.get("price")
+
+    # Разбираем вход/цели/стоп безопасно
+    entry = decision.get("entry")
+    if isinstance(entry, (list, tuple)) and len(entry) == 2:
+        entry_lo, entry_hi = entry
     else:
-        entry_lo = entry_hi = None
+        entry_lo, entry_hi = None, None
 
     tgt1 = decision.get("target1")
     tgt2 = decision.get("target2")
     stop = decision.get("stop")
 
-    # Заголовок
     lines = []
-    lines.append(f"📌 {tkr} — горизонт: {hz}. Текущая оценка: {stance}")
+    header = f"📌 {tkr} — {hz}. Оценка: {stance}"
+    lines.append(header)
 
-    # Цена
-    if price is not None:
-        lines.append(f"📊 Цена сейчас: {price:.2f}")
+    if isinstance(price, (int, float)):
+        lines.append(f"📊 Цена сейчас: {_fmt(price)}")
 
-    # План
     if stance == "WAIT":
-        lines.append("⏳ База: WAIT — ждём лучшую формацию/цену у опорных уровней.")
+        lines.append("⏳ База: WAIT — на текущих уровнях входа нет, ждём лучшей формации.")
+        if entry_lo or entry_hi:
+            lines.append(f"🎯 Интересная зона для набора: {_fmt_range(entry_lo, entry_hi)}")
     elif stance == "BUY":
-        if entry_lo and entry_hi:
-            lines.append(f"🟢 BUY-зона: {entry_lo:.2f}…{entry_hi:.2f}")
-        if tgt1:
-            lines.append(f"🎯 Цель 1: {tgt1:.2f}")
-        if tgt2:
-            lines.append(f"🎯 Цель 2: {tgt2:.2f}")
-        if stop:
-            lines.append(f"🛡 Стоп: {stop:.2f}")
+        lines.append("🟢 Сценарий: LONG")
+        if entry_lo or entry_hi:
+            lines.append(f"🎯 Зона входа: {_fmt_range(entry_lo, entry_hi)}")
+        if tgt1: lines.append(f"🎯 Цель 1: {_fmt(tgt1)}")
+        if tgt2: lines.append(f"🎯 Цель 2: {_fmt(tgt2)}")
+        if stop: lines.append(f"🛡 Стоп: {_fmt(stop)}")
+        lines.append("🧭 Действуем аккуратно: подтверждение по цене/свечам — в приоритете.")
     elif stance == "SELL":
-        if entry_lo and entry_hi:
-            lines.append(f"🔴 SELL-зона: {entry_lo:.2f}…{entry_hi:.2f}")
-        if tgt1:
-            lines.append(f"🎯 Цель 1: {tgt1:.2f}")
-        if tgt2:
-            lines.append(f"🎯 Цель 2: {tgt2:.2f}")
-        if stop:
-            lines.append(f"🛡 Защита: {stop:.2f}")
+        lines.append("🔴 Сценарий: SHORT")
+        if entry_lo or entry_hi:
+            lines.append(f"🎯 Зона входа (шорт): {_fmt_range(entry_lo, entry_hi)}")
+        if tgt1: lines.append(f"🎯 Цель 1: {_fmt(tgt1)}")
+        if tgt2: lines.append(f"🎯 Цель 2: {_fmt(tgt2)}")
+        if stop: lines.append(f"🛡 Защита: {_fmt(stop)}")
+        lines.append("🧭 Работаем без суеты: ждём отказ/подтверждение, объём — умеренный.")
+    else:
+        # На всякий случай — если прилетело что-то нестандартное
+        lines.append("ℹ️ Сигнал не распознан. Ждём ясности или пересчитываем условия.")
 
-    # Комментарий-памятка
     lines.append("⚠️ Если сценарий ломается — быстро выходим и ждём новую формацию.")
     return "\n".join(lines)
