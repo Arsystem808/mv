@@ -1,97 +1,42 @@
 # memo.py
-from typing import Any, Dict, Optional
+from typing import Optional
+from core_strategy import Decision
 
-def _fmt(x: Optional[float]) -> str:
-    return f"{x:.2f}" if isinstance(x, (int, float)) else "—"
+def build_invest_memo(d: Decision) -> str:
+    price = d.meta.get("price")
+    piv = d.meta.get("pivots", {})
 
-def _fmt_range(lo: Optional[float], hi: Optional[float]) -> str:
-    if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
-        return f"{lo:.2f}…{hi:.2f}"
-    return "—"
+    parts = []
+    parts.append(f"### 🎯 Asset: {d.ticker}")
+    parts.append(f"**Горизонт:** {('Краткосрок (1–5 дней)' if d.horizon=='short' else 'Среднесрок (1–4 недели)' if d.horizon=='mid' else 'Долгосрок (1–6 месяцев)')}  ")
+    parts.append(f"**Текущая цена:** ${price}\n")
 
-def _ru_horizon(h: str) -> str:
-    h = (h or "").lower()
-    return {
-        "short": "Трейд (1–5 дней)",
-        "mid": "Среднесрок (1–4 недели)",
-        "long": "Долгосрок (1–6 месяцев)"
-    }.get(h, h or "—")
+    parts.append("## 🧠 Core Recommendation")
+    parts.append(f"**Сценарий:** **{d.stance}**")
 
-def _to_dict(decision: Any) -> Dict[str, Any]:
-    # принимает dict / dataclass / SimpleNamespace / pydantic / прочее
-    if isinstance(decision, dict):
-        return decision
-    try:
-        # dataclass / pydantic alike
-        return dict(decision)
-    except Exception:
-        try:
-            return vars(decision)
-        except Exception:
-            return {"raw": decision}
+    if d.entry:
+        parts.append(f"**Вход:** ${d.entry[0]} – ${d.entry[1]}")
+    if d.target1: parts.append(f"**TP1:** ${d.target1}")
+    if d.target2: parts.append(f"**TP2:** ${d.target2}")
+    if d.stop:    parts.append(f"**Stop:** ${d.stop}")
 
-def build_invest_memo(decision_in: Any) -> str:
-    """
-    Преобразует решение стратегии в человекочитаемое инвест-мемо
-    и не падает, даже если пришёл необычный формат.
-    """
-    d = _to_dict(decision_in)
-
-    tkr = str(d.get("ticker", "")).upper()
-    hz = _ru_horizon(str(d.get("horizon", "")))
-    stance = str(d.get("stance", "WAIT")).upper()
-
-    meta = d.get("meta") or {}
-    if not isinstance(meta, dict):
-        meta = {}
-    price = meta.get("price")
-
-    # entry может быть числом, кортежем или None
-    entry = d.get("entry")
-    entry_lo = entry_hi = None
-    if isinstance(entry, (list, tuple)) and len(entry) == 2:
-        entry_lo, entry_hi = entry
-    elif isinstance(entry, (int, float)):
-        entry_lo = entry_hi = float(entry)
-
-    tgt1 = d.get("target1")
-    tgt2 = d.get("target2")
-    stop = d.get("stop")
-    alt  = d.get("alt")
-
-    lines = [f"📌 {tkr} — {hz}. Оценка: {stance}"]
-
-    if isinstance(price, (int, float)):
-        lines.append(f"📊 Цена сейчас: {_fmt(price)}")
-
-    if stance == "WAIT":
-        lines.append("⏳ База: WAIT — на текущих уровнях входа нет, ждём лучшей формации.")
-        if entry_lo or entry_hi:
-            lines.append(f"🎯 Интересная зона: {_fmt_range(entry_lo, entry_hi)}")
-    elif stance == "BUY":
-        lines.append("🟢 Сценарий: LONG")
-        if entry_lo or entry_hi:
-            lines.append(f"🎯 Вход: {_fmt_range(entry_lo, entry_hi)}")
-        if tgt1: lines.append(f"🎯 Цель 1: {_fmt(tgt1)}")
-        if tgt2: lines.append(f"🎯 Цель 2: {_fmt(tgt2)}")
-        if stop: lines.append(f"🛡 Стоп: {_fmt(stop)}")
-    elif stance == "SELL":
-        lines.append("🔴 Сценарий: SHORT")
-        if entry_lo or entry_hi:
-            lines.append(f"🎯 Вход (шорт): {_fmt_range(entry_lo, entry_hi)}")
-        if tgt1: lines.append(f"🎯 Цель 1: {_fmt(tgt1)}")
-        if tgt2: lines.append(f"🎯 Цель 2: {_fmt(tgt2)}")
-        if stop: lines.append(f"🛡 Защита: {_fmt(stop)}")
+    # human-style краткое резюме
+    parts.append("\n## 📝 Резюме (human-style)")
+    if d.stance == "BUY":
+        parts.append("Работаем от поддержки. Важнее качество точки входа, чем скорость. Уровни по прошлому периоду удерживаются.")
+    elif d.stance == "SELL":
+        parts.append("Перегрев у «крыши». Играем от отказа с коротким стопом. Без подтверждения — не лезем.")
     else:
-        # неизвестная стойка — просто распечатаем ключевые поля
-        if entry_lo or entry_hi:
-            lines.append(f"🎯 Вход: {_fmt_range(entry_lo, entry_hi)}")
-        if tgt1: lines.append(f"🎯 Цель 1: {_fmt(tgt1)}")
-        if tgt2: lines.append(f"🎯 Цель 2: {_fmt(tgt2)}")
-        if stop: lines.append(f"🛡 Защита: {_fmt(stop)}")
+        parts.append("Сейчас выгоднее подождать. Ждём откат к опорной зоне или явное подтверждение разворота.")
 
+    # Приложим ориентиры (без раскрытия формул)
+    parts.append("\n#### Ориентиры (не раскрывая внутренней математики)")
+    piv_line = " / ".join([f"{k}: {v}" for k,v in piv.items()])
+    parts.append(f"{piv_line}")
+
+    # Альтернатива (если есть)
+    alt = d.meta.get("alt")
     if alt:
-        lines.append(f"🔁 Альтернатива: {alt}")
+        parts.append(f"\n_Aльтернатива:_ {alt}")
 
-    lines.append("⚠️ Если сценарий ломается — быстро выходим и ждём новую формацию.")
-    return "\n".join(lines)
+    return "\n\n".join(parts)
