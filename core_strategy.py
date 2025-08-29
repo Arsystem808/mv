@@ -21,10 +21,34 @@ def decide_plan(price: float, horizon: str):
         return ("WAIT", None, None, None, None), ("SHORT", (price*1.0, price*1.02), price*0.95, price*0.9, price*1.05)
     return ("WAIT", None, None, None, None), None
 
-def analyze_ticker(ticker: str, horizon: str) -> Dict:
-    df = fetch_daily(ticker, days=400)
-    price = float(df['close'].iloc[-1])
-    base_tuple, alt_tuple = decide_plan(price, horizon)
+# core_strategy.py
+from typing import Any, Dict, Optional
+
+def analyze_ticker(ticker: str, horizon: str) -> Dict[str, Any]:
+    """
+    Заглушка-адаптер. Замени на твою реальную логику.
+    Важно: вернуть dict с такими ключами (можно без некоторых, memo выдержит):
+    - "ticker": str
+    - "horizon": "short" | "mid" | "long"
+    - "stance": "BUY" | "SELL" | "WAIT"
+    - "entry": (lo, hi) | число | None
+    - "target1"/"target2": float | None
+    - "stop": float | None
+    - "alt": str | None
+    - "meta": {"price": float, ...}  # meta — словарь
+    """
+    # Пример: вернём WAIT c текущей ценой None, чтобы ты видел, что memo живой.
+    return {
+        "ticker": ticker.upper(),
+        "horizon": horizon,
+        "stance": "WAIT",
+        "entry": (None, None),
+        "target1": None,
+        "target2": None,
+        "stop": None,
+        "alt": None,
+        "meta": {"price": None},
+    }
 
     def to_plan(t):
         if not t: return None
