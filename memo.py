@@ -1,6 +1,6 @@
 # memo.py
 import random
-from narrator import Decision  # используем твой dataclass Decision
+from core_strategy import Decision  # используем твой dataclass Decision
 
 HUMAN_HORIZON = {
     "short": "Трейд (1–5 дней)",
