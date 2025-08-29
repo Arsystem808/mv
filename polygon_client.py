@@ -1,0 +1,31 @@
+import os, datetime as dt, requests, pandas as pd
+
+API = os.getenv("POLYGON_API_KEY", "").strip()
+BASE = "https://api.polygon.io"
+
+def _normalize_ticker(t: str) -> str:
+    t = t.upper().strip()
+    if t.endswith("USD") and not t.startswith("X:") and len(t)>3:
+        return "X:" + t
+    return t
+
+def fetch_daily(ticker: str, days: int = 520) -> pd.DataFrame:
+    if not API:
+        raise RuntimeError("POLYGON_API_KEY отсутствует")
+    t = _normalize_ticker(ticker)
+    end = dt.date.today()
+    start = end - dt.timedelta(days=days+10)
+    url = f"{BASE}/v2/aggs/ticker/{t}/range/1/day/{start}/{end}"
+    params = {"adjusted":"true","sort":"asc","limit":50000,"apiKey":API}
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    js = r.json()
+    if not js or "results" not in js: raise RuntimeError("Нет данных Polygon")
+    rows = [{
+        "date":dt.datetime.utcfromtimestamp(o["t"]/1000).date(),
+        "open":float(o["o"]),"high":float(o["h"]),
+        "low":float(o["l"]),"close":float(o["c"]),
+        "volume":float(o.get("v",0.0))} for o in js["results"]]
+    df = pd.DataFrame(rows).sort_values("date")
+    df = df.set_index(pd.to_datetime(df["date"])).drop(columns=["date"])
+    return df
