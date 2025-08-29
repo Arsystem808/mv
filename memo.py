@@ -1,106 +1,71 @@
 # memo.py
-import random
-from core_strategy import Decision  # используем твой dataclass Decision
+from typing import Any, Dict, Optional
 
-HUMAN_HORIZON = {
-    "short": "Трейд (1–5 дней)",
-    "mid":   "Среднесрок (1–4 недели)",
-    "long":  "Долгосрок (1–6 месяцев)"
-}
+# На вход принимаем "решение" как обычный dict (у тебя Decision наследуется от dict)
+# и формируем короткое инвест-мемо в человекочитаемом стиле.
 
-def _fmt_range(z):
-    if not z or any(v is None for v in z):
-        return "—"
-    lo, hi = sorted([float(z[0]), float(z[1])])
-    return f"{lo:.2f}…{hi:.2f}" if hi - lo >= 0.01 else f"{lo:.2f}"
+def build_invest_memo(decision: Dict[str, Any]) -> str:
+    """
+    decision: {
+      'ticker': 'QQQ',
+      'horizon': 'long'|'mid'|'short',
+      'stance': 'BUY'|'SELL'|'WAIT',
+      'entry': (float|None, float|None),
+      'target1': float|None,
+      'target2': float|None,
+      'stop': float|None,
+      'meta': {'price': float, ...}
+    }
+    """
+    tkr: str = decision.get("ticker", "").upper()
+    hz: str = decision.get("horizon", "")
+    stance: str = decision.get("stance", "WAIT")
+    price: Optional[float] = None
+    try:
+        price = float(decision.get("meta", {}).get("price"))  # может быть Decimal/строка
+    except Exception:
+        pass
 
-def _stance_ru(s):
-    return {"BUY":"Покупка","SHORT":"Шорт","SELL":"Продажа","WAIT":"WAIT"}.get(s.upper(), s)
-
-def _tone_snippet():
-    pool = [
-        "Видится мне, рынок дышит чаще обычного — лучше не спешить.",
-        "По ощущению рынка, толпа слегка перегрелась — действуем аккуратно.",
-        "Импульс будто устал — берём только качественные точки.",
-    ]
-    return random.choice(pool)
-
-def _derive_alt(base: Decision, price: float) -> Decision | None:
-    """Если база WAIT — предложим аккуратную альтернативу.
-       Если база BUY/SHORT — альтернатива в виде WAIT (без контртренда по умолчанию)."""
-    if base.stance == "WAIT":
-        # Нейтральная аккуратная альтернатива: вход вокруг заданной зоны, если она есть
-        if base.entry:
-            lo, hi = sorted(base.entry)
-            if price <= (lo + hi)/2:
-                # предложим осторожный BUY
-                return Decision(
-                    stance="BUY",
-                    entry=(lo, hi),
-                    target1=base.target1,  # числа берём из ядра — без раскрытия логики
-                    target2=base.target2,
-                    stop=base.stop,
-                    meta=base.meta
-                )
-            else:
-                # предложим осторожный SHORT
-                return Decision(
-                    stance="SHORT",
-                    entry=(lo, hi),
-                    target1=base.target1,
-                    target2=base.target2,
-                    stop=base.stop,
-                    meta=base.meta
-                )
-        return None
+    ent = decision.get("entry")
+    if isinstance(ent, (list, tuple)) and len(ent) == 2:
+        entry_lo, entry_hi = ent
     else:
-        # Если уже есть явный план (BUY/SHORT) — альтернативой сделаем WAIT, без контртренда
-        return Decision(stance="WAIT", entry=None, target1=None, target2=None, stop=None, meta=base.meta)
+        entry_lo = entry_hi = None
 
-def build_invest_memo(ticker: str, price: float, horizon: str, base: Decision) -> str:
-    """Возвращает готовый markdown для инвест-мемо (без «стратегий», только цены/действия)."""
-    hz = HUMAN_HORIZON.get(horizon, horizon)
-    headline = f"### Инвестиционная идея\n**Ticker:** {ticker.upper()}  \n**Горизонт:** {hz}  \n**Рекомендация:** {_stance_ru(base.stance)}"
+    tgt1 = decision.get("target1")
+    tgt2 = decision.get("target2")
+    stop = decision.get("stop")
 
-    situation = (
-        "### Текущая ситуация\n"
-        f"{_tone_snippet()} Цена сейчас вокруг **{price:.2f}**. "
-        "Смотрим на поведение цены и выбираем точку с явным перевесом."
-    )
+    # Заголовок
+    lines = []
+    lines.append(f"📌 {tkr} — горизонт: {hz}. Текущая оценка: {stance}")
 
-    # Базовый план
-    base_block = [
-        f"### Торговый план — базовый ({_stance_ru(base.stance)})",
-        f"Вход: {_fmt_range(base.entry)}",
-        f"Цель 1: {base.target1:.2f}" if base.target1 else "Цель 1: —",
-        f"Цель 2: {base.target2:.2f}" if base.target2 else "Цель 2: —",
-        f"Стоп: {base.stop:.2f}" if base.stop else "Стоп: —",
-    ]
-    base_text = "\n".join(base_block)
+    # Цена
+    if price is not None:
+        lines.append(f"📊 Цена сейчас: {price:.2f}")
 
-    # Альтернатива
-    alt = _derive_alt(base, price)
-    if alt:
-        alt_block = [
-            f"### Альтернативный сценарий ({_stance_ru(alt.stance)})",
-            f"Вход: {_fmt_range(alt.entry)}",
-            f"Цель 1: {alt.target1:.2f}" if alt.target1 else "Цель 1: —",
-            f"Цель 2: {alt.target2:.2f}" if alt.target2 else "Цель 2: —",
-            f"Стоп: {alt.stop:.2f}" if alt.stop else "Стоп: —",
-        ]
-        alt_text = "\n".join(alt_block)
-    else:
-        alt_text = ""
+    # План
+    if stance == "WAIT":
+        lines.append("⏳ База: WAIT — ждём лучшую формацию/цену у опорных уровней.")
+    elif stance == "BUY":
+        if entry_lo and entry_hi:
+            lines.append(f"🟢 BUY-зона: {entry_lo:.2f}…{entry_hi:.2f}")
+        if tgt1:
+            lines.append(f"🎯 Цель 1: {tgt1:.2f}")
+        if tgt2:
+            lines.append(f"🎯 Цель 2: {tgt2:.2f}")
+        if stop:
+            lines.append(f"🛡 Стоп: {stop:.2f}")
+    elif stance == "SELL":
+        if entry_lo and entry_hi:
+            lines.append(f"🔴 SELL-зона: {entry_lo:.2f}…{entry_hi:.2f}")
+        if tgt1:
+            lines.append(f"🎯 Цель 1: {tgt1:.2f}")
+        if tgt2:
+            lines.append(f"🎯 Цель 2: {tgt2:.2f}")
+        if stop:
+            lines.append(f"🛡 Защита: {stop:.2f}")
 
-    footer = (
-        "### Резюме\n"
-        "Работаем спокойно: берём там, где перевес очевиден. "
-        "Если сценарий ломается — быстро выходим и ждём следующую форму. "
-        "Без суеты."
-    )
-
-    parts = [headline, situation, base_text]
-    if alt_text:
-        parts.append(alt_text)
-    parts.append(footer)
-    return "\n\n".join(parts)
+    # Комментарий-памятка
+    lines.append("⚠️ Если сценарий ломается — быстро выходим и ждём новую формацию.")
+    return "\n".join(lines)
